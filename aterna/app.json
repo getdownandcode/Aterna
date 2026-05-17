@@ -1,0 +1,61 @@
+{
+  "expo": {
+    "name": "Aterna",
+    "slug": "aterna",
+    "version": "1.0.0",
+    "orientation": "portrait",
+    "icon": "./assets/icon.png",
+    "userInterfaceStyle": "dark",
+    "backgroundColor": "#0D0D0F",
+    "splash": {
+      "image": "./assets/splash.png",
+      "resizeMode": "contain",
+      "backgroundColor": "#0D0D0F"
+    },
+    "ios": {
+      "supportsTablet": false,
+      "bundleIdentifier": "com.aterna.app",
+      "infoPlist": {
+        "NSCameraUsageDescription": "Aterna uses your camera to record weekly partner accountability videos.",
+        "NSMicrophoneUsageDescription": "Aterna uses your microphone to record voice goal declarations and partner videos."
+      }
+    },
+    "android": {
+      "adaptiveIcon": {
+        "foregroundImage": "./assets/adaptive-icon.png",
+        "backgroundColor": "#0D0D0F"
+      },
+      "package": "com.aterna.app",
+      "permissions": [
+        "CAMERA",
+        "RECORD_AUDIO",
+        "USE_BIOMETRIC",
+        "VIBRATE"
+      ]
+    },
+    "plugins": [
+      "expo-router",
+      "expo-secure-store",
+      [
+        "expo-camera",
+        {
+          "cameraPermission": "Allow Aterna to access your camera for partner videos."
+        }
+      ],
+      [
+        "expo-notifications",
+        {
+          "icon": "./assets/notification-icon.png",
+          "color": "#7B6EF6",
+          "sounds": []
+        }
+      ],
+      "expo-av",
+      "expo-web-browser"
+    ],
+    "experiments": {
+      "typedRoutes": true
+    },
+    "scheme": "aterna"
+  }
+}

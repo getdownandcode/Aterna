@@ -1,0 +1,95 @@
+# Dependencies
+node_modules/
+*/node_modules/
+yarn.lock
+pnpm-lock.yaml
+
+# Expo/React Native
+.expo/
+.expo-shared/
+dist/
+build/
+web-build/
+*.jks
+*.p8
+*.p12
+*.key
+*.mobileprovision
+*.orig.*
+ios/
+android/
+
+
+# Metro
+.metro-health-check*
+
+# Environment variables
+.env*
+!.env.example
+
+# IDE & Editor
+.vscode/
+.idea/
+*.sublime-project
+*.sublime-workspace
+*.swp
+*.swo
+*~
+*.suo
+*.ntvs*
+*.njsproj
+*.sln
+*.sw?
+
+# OS files
+.DS_Store
+Thumbs.db
+.AppleDouble
+.LSOverride
+*.class
+
+# Logs
+logs/
+*.log
+npm-debug.log*
+npm-error.log*
+yarn-debug.log*
+yarn-error.log*
+lerna-debug.log*
+.pnpm-debug.log*
+
+# Runtime data
+pids/
+*.pid
+*.seed
+*.pid.lock
+
+# Cache
+.cache/
+.parcel-cache
+.eslintcache
+
+# Compiled TypeScript
+*.tsbuildinfo
+
+# Generated
+generated/
+expo-env.d.ts
+
+# Temporary files
+temp/
+tmp/
+*.tmp
+
+
+# Kotlin
+.kotlin/
+
+# Certificates
+*.pem
+
+# Local tooling (not for GitHub)
+.claude/
+.opencode/
+agent/
+Skill_AppFiles/
