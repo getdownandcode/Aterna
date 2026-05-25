@@ -21,10 +21,15 @@ export default function SignUp() {
     }
 
     try {
+      const nameParts = displayName.trim().split(/\s+/);
+      const firstName = nameParts[0] || "";
+      const lastName = nameParts.slice(1).join(" ") || ".";
+
       await signUp.create({
         emailAddress: email,
         password,
-        firstName: displayName,
+        firstName,
+        lastName,
       });
 
       await signUp.prepareEmailAddressVerification({ strategy: "email_code" });

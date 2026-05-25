@@ -16,13 +16,13 @@ export default function VerifyEmail() {
     if (!isLoaded || !signUp) return;
     if (signUp.status === "complete" && signUp.createdSessionId) {
       setActive({ session: signUp.createdSessionId });
-      router.replace("/home");
     }
-  }, [isLoaded, signUp, setActive, router]);
+  }, [isLoaded, signUp, setActive]);
 
   const handleVerify = async () => {
     if (!isLoaded || !signUp) return;
-    if (!code) {
+    const cleanCode = code.trim();
+    if (!cleanCode) {
       setError("Enter the 6-digit code from your email");
       return;
     }
@@ -31,18 +31,37 @@ export default function VerifyEmail() {
     setError(null);
 
     try {
+      console.log("[VerifyEmail] Attempting email verification with code:", cleanCode);
       const completeSignUp = await signUp.attemptEmailAddressVerification({
-        code,
+        code: cleanCode,
       });
 
+      console.log("[VerifyEmail] attemptEmailAddressVerification response status:", completeSignUp.status);
+
       if (completeSignUp.status === "complete") {
+        if (completeSignUp.createdSessionId) {
+          await setActive({ session: completeSignUp.createdSessionId });
+        } else {
+          setError("Verification complete, but no session was created.");
+        }
+      } else if (completeSignUp.createdSessionId) {
+        // Failsafe: if we have a session ID, try to activate it anyway
+        console.log("[VerifyEmail] Incomplete status but session ID is present. Attempting to activate session...");
         await setActive({ session: completeSignUp.createdSessionId });
-        router.replace("/home");
       } else {
-        setError("Verification incomplete. Check the code and try again.");
+        console.warn("[VerifyEmail] Incomplete sign-up response:", JSON.stringify(completeSignUp, null, 2));
+        
+        // Extract outstanding requirements if possible
+        const missing = (completeSignUp as any).missingFields || (completeSignUp as any).unverifiedFields || [];
+        if (missing.length > 0) {
+          setError(`Verification successful, but sign-up is incomplete. Missing required fields: ${missing.join(", ")}`);
+        } else {
+          setError(`Verification successful, but sign-up status is "${completeSignUp.status}". Please verify your Clerk project settings.`);
+        }
       }
     } catch (err) {
       const message = err instanceof Error ? err.message : "Verification failed";
+      console.error("[VerifyEmail] Verification error:", err);
 
       if (
         message.toLowerCase().includes("already verified") ||
@@ -51,11 +70,9 @@ export default function VerifyEmail() {
         await signUp.reload();
         if (signUp.status === "complete" && signUp.createdSessionId) {
           await setActive({ session: signUp.createdSessionId });
-          router.replace("/home");
           return;
         }
         setError("Already verified. Signing you in...");
-        setTimeout(() => router.replace("/home"), 1500);
       } else {
         setError(message);
       }

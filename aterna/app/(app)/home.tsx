@@ -1,26 +1,193 @@
-import React from "react";
-import { View, Text, SafeAreaView, StyleSheet, ScrollView } from "react-native";
-import { StreakRing } from "@/components/goal/StreakRing";
-import { Button } from "@/components/ui/Button";
+import React, { useEffect, useState, useCallback } from "react";
+import {
+  View,
+  Text,
+  SafeAreaView,
+  StyleSheet,
+  ScrollView,
+  ActivityIndicator,
+  RefreshControl,
+} from "react-native";
+import { useRouter } from "expo-router";
+import * as Haptics from "expo-haptics";
+import * as SecureStore from "expo-secure-store";
+import { useAuth } from "@clerk/clerk-expo";
 import { colors } from "@/constants/theme";
+import { StreakRing } from "@/components/goal/StreakRing";
+import { GoalCard } from "@/components/goal/GoalCard";
+import { SubTaskList } from "@/components/goal/SubTaskList";
+import { Button } from "@/components/ui/Button";
+import { useUser } from "@/hooks/useUser";
+import { getSupabaseClient } from "@/lib/supabase";
+import type { Goal } from "@/types/database";
 
 export default function Home() {
+  const router = useRouter();
+  const { dbUser, loading: userLoading, refetch: refetchUser } = useUser();
+  const { getToken } = useAuth();
+
+  const [activeGoal, setActiveGoal] = useState<Goal | null>(null);
+  const [subTasks, setSubTasks] = useState<string[]>([]);
+  const [subTasksCompleted, setSubTasksCompleted] = useState<boolean[]>([]);
+  const [loadingGoal, setLoadingGoal] = useState(true);
+  const [refreshing, setRefreshing] = useState(false);
+
+  const fetchActiveGoal = useCallback(async () => {
+    if (!dbUser) return;
+    try {
+      setLoadingGoal(true);
+      const token = await getToken({ template: "supabase" });
+      if (!token) return;
+      const supabase = getSupabaseClient(token);
+
+      // Query the single active goal from Supabase
+      const { data, error } = await supabase
+        .from("goals")
+        .select("*")
+        .eq("user_id", dbUser.id)
+        .eq("status", "active")
+        .order("created_at", { ascending: false })
+        .limit(1)
+        .maybeSingle();
+
+      if (error) {
+        console.error("[Home] Fetch goal error:", error.message);
+      }
+
+      if (data) {
+        setActiveGoal(data);
+
+        // Fetch sub-tasks from local SecureStore cache for this goal
+        const cachedTasks = await SecureStore.getItemAsync(`subtasks_${data.id}`);
+        if (cachedTasks) {
+          const parsed: string[] = JSON.parse(cachedTasks);
+          setSubTasks(parsed);
+
+          // Get checked state if exists, else default false array
+          const checkedState = await SecureStore.getItemAsync(`subtasks_completed_${data.id}`);
+          if (checkedState) {
+            setSubTasksCompleted(JSON.parse(checkedState));
+          } else {
+            setSubTasksCompleted(new Array(parsed.length).fill(false));
+          }
+        } else {
+          // Default fallbacks
+          const fallback = ["Complete daily declaration", "Follow up on goals", "Log evening check-in"];
+          setSubTasks(fallback);
+          setSubTasksCompleted(new Array(fallback.length).fill(false));
+        }
+      } else {
+        setActiveGoal(null);
+        setSubTasks([]);
+        setSubTasksCompleted([]);
+      }
+    } catch (err) {
+      console.error("[Home] Load active goal failed:", err);
+    } finally {
+      setLoadingGoal(false);
+    }
+  }, [dbUser, getToken]);
+
+  useEffect(() => {
+    fetchActiveGoal();
+  }, [fetchActiveGoal]);
+
+  const handleRefresh = async () => {
+    setRefreshing(true);
+    Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+    await Promise.all([refetchUser(), fetchActiveGoal()]);
+    setRefreshing(false);
+  };
+
+  const handleToggleSubtask = async (idx: number) => {
+    Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
+    const updated = [...subTasksCompleted];
+    updated[idx] = !updated[idx];
+    setSubTasksCompleted(updated);
+
+    if (activeGoal) {
+      await SecureStore.setItemAsync(`subtasks_completed_${activeGoal.id}`, JSON.stringify(updated));
+    }
+  };
+
+  const getGreeting = () => {
+    const hr = new Date().getHours();
+    if (hr < 12) return "Good morning";
+    if (hr < 18) return "Good afternoon";
+    return "Good evening";
+  };
+
+  const displayGreeting = dbUser?.display_name
+    ? `${getGreeting()}, ${dbUser.display_name.split(" ")[0]}!`
+    : `${getGreeting()}!`;
+
+  if (userLoading || (loadingGoal && !refreshing)) {
+    return (
+      <SafeAreaView style={styles.loadingContainer}>
+        <ActivityIndicator size="large" color={colors.accent.default} />
+      </SafeAreaView>
+    );
+  }
+
   return (
     <SafeAreaView style={styles.container}>
-      <ScrollView contentContainerStyle={styles.content}>
+      <ScrollView
+        contentContainerStyle={styles.scrollContent}
+        refreshControl={
+          <RefreshControl refreshing={refreshing} onRefresh={handleRefresh} tintColor={colors.accent.default} />
+        }
+      >
+        {/* Header Block */}
         <View style={styles.header}>
-          <Text style={styles.greeting}>Good morning</Text>
-          <StreakRing streak={0} />
+          <View style={styles.welcomeBox}>
+            <Text style={styles.greeting}>{displayGreeting}</Text>
+            <Text style={styles.tagline}>Here is your dashboard for today.</Text>
+          </View>
+          <StreakRing streak={dbUser?.streak_current || 0} size={76} />
         </View>
 
-        <View style={styles.emptyState}>
-          <Text style={styles.emptyTitle}>No goal yet today</Text>
-          <Text style={styles.emptySubtitle}>
-            Declare your goal and put something at stake.
-          </Text>
-        </View>
+        {activeGoal ? (
+          <View style={styles.activeGoalSection}>
+            {/* Goal Card Component */}
+            <GoalCard goal={activeGoal} />
 
-        <Button label="Set today's goal" onPress={() => {}} />
+            {/* Sub-tasks Section */}
+            <View style={styles.subtasksCard}>
+              <Text style={styles.sectionTitle}>🎯 DAILY ACTION CHECKLIST</Text>
+              <View style={styles.divider} />
+              
+              <SubTaskList
+                tasks={subTasks}
+                completed={subTasksCompleted}
+                onToggle={handleToggleSubtask}
+              />
+            </View>
+
+            {/* Accountability status note */}
+            <View style={styles.contractAlert}>
+              <Text style={styles.contractAlertText}>
+                🔒 **Staking active.** Check in before **{dbUser?.checkin_time?.substring(0, 5) || "21:00"}** to release your **${activeGoal.stake_amount.toFixed(2)}** hold!
+              </Text>
+            </View>
+          </View>
+        ) : (
+          <View style={styles.emptyStateSection}>
+            <View style={styles.emptyCard}>
+              <Text style={styles.emptyEmoji}>🔥</Text>
+              <Text style={styles.emptyTitle}>Your daily commitment</Text>
+              <Text style={styles.emptyText}>
+                No goal has been declared yet today. Lock in your stake and build your accountability streak!
+              </Text>
+              <Button
+                label="Declare Today's Goal"
+                onPress={() => {
+                  Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+                  router.push("/goal/declare");
+                }}
+              />
+            </View>
+          </View>
+        )}
       </ScrollView>
     </SafeAreaView>
   );
@@ -31,33 +198,98 @@ const styles = StyleSheet.create({
     flex: 1,
     backgroundColor: colors.bg.base,
   },
-  content: {
+  loadingContainer: {
+    flex: 1,
+    backgroundColor: colors.bg.base,
+    justifyContent: "center",
+    alignItems: "center",
+  },
+  scrollContent: {
     padding: 24,
-    flexGrow: 1,
+    paddingBottom: 40,
   },
   header: {
+    flexDirection: "row",
+    justifyContent: "space-between",
     alignItems: "center",
-    marginBottom: 40,
+    marginBottom: 28,
+  },
+  welcomeBox: {
+    flex: 1,
+    marginRight: 16,
   },
   greeting: {
-    fontSize: 28,
+    fontSize: 22,
     fontWeight: "700",
     color: colors.text.primary,
-    marginBottom: 20,
   },
-  emptyState: {
+  tagline: {
+    fontSize: 13,
+    color: colors.text.tertiary,
+    marginTop: 4,
+  },
+  activeGoalSection: {
+    gap: 16,
+  },
+  subtasksCard: {
+    backgroundColor: colors.bg.card,
+    borderRadius: 16,
+    padding: 20,
+    borderWidth: 1,
+    borderColor: colors.border.default,
+  },
+  sectionTitle: {
+    fontSize: 11,
+    fontWeight: "700",
+    color: colors.text.secondary,
+    letterSpacing: 1.2,
+  },
+  divider: {
+    height: 1,
+    backgroundColor: colors.border.default,
+    marginVertical: 14,
+  },
+  contractAlert: {
+    backgroundColor: colors.border.emphasis + "10",
+    borderRadius: 12,
+    padding: 14,
+    borderWidth: 1,
+    borderColor: colors.border.default,
+  },
+  contractAlertText: {
+    fontSize: 12,
+    color: colors.text.secondary,
+    lineHeight: 18,
+    textAlign: "center",
+  },
+  emptyStateSection: {
+    flex: 1,
+    justifyContent: "center",
+    paddingTop: 40,
+  },
+  emptyCard: {
+    backgroundColor: colors.bg.card,
+    borderRadius: 20,
+    padding: 32,
     alignItems: "center",
-    marginBottom: 32,
+    borderWidth: 1,
+    borderColor: colors.border.default,
+  },
+  emptyEmoji: {
+    fontSize: 54,
+    marginBottom: 16,
   },
   emptyTitle: {
-    fontSize: 20,
-    fontWeight: "600",
+    fontSize: 18,
+    fontWeight: "700",
     color: colors.text.primary,
     marginBottom: 8,
   },
-  emptySubtitle: {
-    fontSize: 15,
+  emptyText: {
+    fontSize: 13,
     color: colors.text.secondary,
     textAlign: "center",
+    lineHeight: 20,
+    marginBottom: 24,
   },
 });
