@@ -1,6 +1,7 @@
 import { ClerkProvider, useAuth, useUser } from "@clerk/clerk-expo";
 import { Slot, useRouter, useSegments } from "expo-router";
 import { useEffect } from "react";
+import * as Linking from "expo-linking";
 import { clerkTokenCache } from "@/lib/clerk";
 
 const CLERK_PUBLISHABLE_KEY = process.env.EXPO_PUBLIC_CLERK_PUBLISHABLE_KEY || "";
@@ -12,6 +13,39 @@ function RouteGuard() {
   const navRouter = useRouter();
 
   const isLoaded = isAuthLoaded && isUserLoaded;
+
+  // Deep linking handler to support push notification redirects
+  useEffect(() => {
+    const handleDeepLink = (event: { url: string }) => {
+      try {
+        const parsed = Linking.parse(event.url);
+        console.log("[DeepLink] Parsed incoming URL:", parsed);
+        
+        // Match aterna://checkin?goalId=<uuid>
+        if (parsed.path === "checkin" && parsed.queryParams?.goalId) {
+          navRouter.push({
+            pathname: "/checkin",
+            params: { goalId: parsed.queryParams.goalId as string },
+          });
+        }
+      } catch (err) {
+        console.error("[DeepLink] Failed to parse URL:", err);
+      }
+    };
+
+    const subscription = Linking.addEventListener("url", handleDeepLink);
+
+    // Check if the app was launched via a deep link
+    Linking.getInitialURL().then((url) => {
+      if (url) {
+        handleDeepLink({ url });
+      }
+    });
+
+    return () => {
+      subscription.remove();
+    };
+  }, [navRouter]);
 
   useEffect(() => {
     const segs = segments as string[];

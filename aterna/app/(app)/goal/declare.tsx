@@ -9,7 +9,10 @@ import {
   ScrollView,
   ActivityIndicator,
   Alert,
+  Platform,
+  StatusBar,
 } from "react-native";
+import { Mic, Square, X } from "lucide-react-native";
 import { useRouter } from "expo-router";
 import { Audio } from "expo-av";
 import * as Haptics from "expo-haptics";
@@ -169,6 +172,20 @@ export default function Declare() {
 
   return (
     <SafeAreaView style={styles.container}>
+      {/* Premium Navigation Close Bar */}
+      <View style={styles.topHeaderBar}>
+        <TouchableOpacity
+          activeOpacity={0.7}
+          style={styles.closeButton}
+          onPress={() => {
+            Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+            router.back();
+          }}
+        >
+          <X color={colors.text.secondary} size={20} />
+        </TouchableOpacity>
+      </View>
+
       <View style={styles.header}>
         <Text style={styles.title}>Declare today&apos;s goal</Text>
         <Text style={styles.subtitle}>
@@ -244,12 +261,41 @@ export default function Declare() {
           <View style={styles.voiceSection}>
             {recordedUri ? (
               <View style={styles.recordedBox}>
-                <Text style={styles.recordedEmoji}>🎉</Text>
-                <Text style={styles.recordedText}>Voice goal recorded successfully!</Text>
-                <Text style={styles.durationText}>Length: {formatTime(duration)}</Text>
-                <TouchableOpacity style={styles.resetButton} onPress={handleResetRecord}>
-                  <Text style={styles.resetButtonText}>🔄 Record again</Text>
-                </TouchableOpacity>
+                <View style={styles.audioCardHeader}>
+                  <View style={styles.audioIconCircle}>
+                    <Mic color={colors.accent.default} size={22} />
+                  </View>
+                  <View style={styles.audioInfo}>
+                    <Text style={styles.recordedText}>Voice Commitment Captured</Text>
+                    <Text style={styles.durationText}>Duration: {formatTime(duration)}</Text>
+                  </View>
+                </View>
+                
+                {/* soundwave representation mockup */}
+                <View style={styles.waveformContainer}>
+                  {[3, 7, 5, 8, 12, 10, 4, 6, 9, 14, 11, 7, 5, 3].map((height, i) => (
+                    <View
+                      key={i}
+                      style={[
+                        styles.waveBar,
+                        {
+                          height: height * 2.5,
+                          backgroundColor: colors.accent.default + "a0",
+                        },
+                      ]}
+                    />
+                  ))}
+                </View>
+
+                <View style={styles.recordedButtonsRow}>
+                  <TouchableOpacity
+                    activeOpacity={0.7}
+                    style={styles.premiumResetButton}
+                    onPress={handleResetRecord}
+                  >
+                    <Text style={styles.premiumResetButtonText}>🔄 Re-record Voice Memo</Text>
+                  </TouchableOpacity>
+                </View>
               </View>
             ) : (
               <View style={styles.recorderBox}>
@@ -268,7 +314,11 @@ export default function Declare() {
                   onPress={isRecording ? stopRecording : startRecording}
                 >
                   <View style={styles.recordButtonInner}>
-                    <Text style={styles.micEmoji}>{isRecording ? "⏹️" : "🎙️"}</Text>
+                    {isRecording ? (
+                      <Square color={colors.danger.default} size={28} fill={colors.danger.default} />
+                    ) : (
+                      <Mic color={colors.accent.default} size={30} />
+                    )}
                   </View>
                 </TouchableOpacity>
                 <Text style={styles.voiceNote}>Keep it concise, under 60 seconds.</Text>
@@ -309,6 +359,22 @@ const styles = StyleSheet.create({
   container: {
     flex: 1,
     backgroundColor: colors.bg.base,
+    paddingTop: Platform.OS === "ios" ? 12 : (StatusBar.currentHeight || 0) + 12,
+  },
+  topHeaderBar: {
+    flexDirection: "row",
+    justifyContent: "flex-start",
+    alignItems: "center",
+    paddingHorizontal: 24,
+    paddingTop: 8,
+    paddingBottom: 0,
+  },
+  closeButton: {
+    padding: 8,
+    borderRadius: 20,
+    backgroundColor: colors.bg.card,
+    borderWidth: 1,
+    borderColor: colors.border.default,
   },
   header: {
     padding: 24,
@@ -397,39 +463,85 @@ const styles = StyleSheet.create({
   },
   recordedBox: {
     backgroundColor: colors.bg.card,
-    borderRadius: 16,
+    borderRadius: 20,
     padding: 24,
     alignItems: "center",
     width: "100%",
     borderWidth: 1,
-    borderColor: colors.border.default,
+    borderColor: colors.border.emphasis + "30",
+    shadowColor: "#000",
+    shadowOffset: { width: 0, height: 6 },
+    shadowOpacity: 0.15,
+    shadowRadius: 16,
+    elevation: 4,
   },
-  recordedEmoji: {
-    fontSize: 48,
-    marginBottom: 12,
+  audioCardHeader: {
+    flexDirection: "row",
+    alignItems: "center",
+    width: "100%",
+    gap: 16,
+    marginBottom: 20,
+  },
+  audioIconCircle: {
+    width: 48,
+    height: 48,
+    borderRadius: 24,
+    backgroundColor: colors.accent.default + "15",
+    justifyContent: "center",
+    alignItems: "center",
+  },
+  audioInfo: {
+    flex: 1,
   },
   recordedText: {
     fontSize: 16,
-    fontWeight: "600",
+    fontWeight: "700",
     color: colors.text.primary,
-    marginBottom: 8,
+    marginBottom: 4,
   },
   durationText: {
-    fontSize: 14,
-    color: colors.text.tertiary,
-    marginBottom: 20,
-  },
-  resetButton: {
-    paddingVertical: 10,
-    paddingHorizontal: 20,
-    borderRadius: 20,
-    borderWidth: 1,
-    borderColor: colors.accent.default,
-  },
-  resetButtonText: {
-    color: colors.accent.default,
     fontSize: 13,
-    fontWeight: "500",
+    color: colors.text.secondary,
+  },
+  waveformContainer: {
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "center",
+    gap: 4,
+    height: 60,
+    width: "100%",
+    backgroundColor: colors.bg.base,
+    borderRadius: 12,
+    borderWidth: 1,
+    borderColor: colors.border.default,
+    marginBottom: 20,
+    paddingHorizontal: 16,
+  },
+  waveBar: {
+    width: 4,
+    borderRadius: 2,
+  },
+  recordedButtonsRow: {
+    flexDirection: "row",
+    width: "100%",
+    justifyContent: "center",
+  },
+  premiumResetButton: {
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "center",
+    gap: 6,
+    paddingVertical: 12,
+    paddingHorizontal: 24,
+    borderRadius: 24,
+    borderWidth: 1.5,
+    borderColor: colors.accent.default,
+    backgroundColor: colors.accent.default + "10",
+  },
+  premiumResetButtonText: {
+    color: colors.accent.default,
+    fontSize: 14,
+    fontWeight: "600",
   },
   recorderBox: {
     alignItems: "center",

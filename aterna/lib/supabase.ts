@@ -35,3 +35,22 @@ export const getSupabaseClient = (clerkToken: string) => {
     },
   });
 };
+
+export const getSupabase = async (
+  getToken: (options?: { template?: string }) => Promise<string | null | undefined>
+) => {
+  try {
+    // Under Clerk's new native integration, we use the default Clerk token (no template argument)
+    const token = await getToken();
+    if (token) {
+      console.log("[getSupabase] ✅ Successfully retrieved Clerk JWT. Passing authenticated client.");
+      return getSupabaseClient(token);
+    } else {
+      console.warn("[getSupabase] ⚠️ getToken() returned null/undefined. Falling back to anonymous client.");
+    }
+  } catch (err) {
+    console.error("[getSupabase] ❌ Error retrieving token:", err);
+  }
+  return supabase;
+};
+

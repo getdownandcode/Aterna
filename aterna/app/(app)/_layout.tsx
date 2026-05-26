@@ -1,60 +1,22 @@
-import { Tabs } from "expo-router";
-import { Home, Compass, Users, BarChart2, User } from "lucide-react-native";
-import { colors } from "@/constants/theme";
+import { Stack } from "expo-router";
 
 export default function AppLayout() {
   return (
-    <Tabs
-      screenOptions={{
-        headerShown: false,
-        tabBarStyle: {
-          backgroundColor: colors.bg.base,
-          borderTopColor: colors.border.default,
-          borderTopWidth: 0.5,
-          paddingBottom: 8,
-          paddingTop: 8,
-          height: 60,
-        },
-        tabBarActiveTintColor: colors.accent.default,
-        tabBarInactiveTintColor: colors.text.tertiary,
-        tabBarLabelStyle: { fontSize: 10, marginTop: 2 },
-      }}
-    >
-      <Tabs.Screen
-        name="home"
-        options={{
-          title: "Home",
-          tabBarIcon: ({ color }) => <Home color={color} size={20} />,
-        }}
-      />
-      <Tabs.Screen
-        name="discover"
-        options={{
-          title: "Discover",
-          tabBarIcon: ({ color }) => <Compass color={color} size={20} />,
-        }}
-      />
-      <Tabs.Screen
-        name="partner"
-        options={{
-          title: "Partner",
-          tabBarIcon: ({ color }) => <Users color={color} size={20} />,
-        }}
-      />
-      <Tabs.Screen
-        name="insights"
-        options={{
-          title: "Insights",
-          tabBarIcon: ({ color }) => <BarChart2 color={color} size={20} />,
-        }}
-      />
-      <Tabs.Screen
-        name="profile"
-        options={{
-          title: "Profile",
-          tabBarIcon: ({ color }) => <User color={color} size={20} />,
-        }}
-      />
-    </Tabs>
+    <Stack screenOptions={{ headerShown: false }}>
+      {/* Tab Group containing Home, Discover, Partner, Insights, Profile */}
+      <Stack.Screen name="(tabs)" />
+
+      {/* Auxiliary full-screen flow pages */}
+      <Stack.Screen name="already-checked-in" />
+      <Stack.Screen name="checkin" />
+      <Stack.Screen name="checkin-result" />
+      <Stack.Screen name="profile/transactions" />
+
+      {/* Goal flows */}
+      <Stack.Screen name="goal/declare" />
+      <Stack.Screen name="goal/ai-rewrite" />
+      <Stack.Screen name="goal/stake" />
+      <Stack.Screen name="goal/confirm" />
+    </Stack>
   );
 }

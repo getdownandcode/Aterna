@@ -7,6 +7,9 @@ import {
   ScrollView,
   ActivityIndicator,
   RefreshControl,
+  Platform,
+  StatusBar,
+  TouchableOpacity,
 } from "react-native";
 import { useRouter } from "expo-router";
 import * as Haptics from "expo-haptics";
@@ -18,8 +21,10 @@ import { GoalCard } from "@/components/goal/GoalCard";
 import { SubTaskList } from "@/components/goal/SubTaskList";
 import { Button } from "@/components/ui/Button";
 import { useUser } from "@/hooks/useUser";
-import { getSupabaseClient } from "@/lib/supabase";
+import { getSupabase } from "@/lib/supabase";
+import { requestPermission } from "@/lib/notifications";
 import type { Goal } from "@/types/database";
+import { Bell, ChevronRight } from "lucide-react-native";
 
 export default function Home() {
   const router = useRouter();
@@ -36,9 +41,7 @@ export default function Home() {
     if (!dbUser) return;
     try {
       setLoadingGoal(true);
-      const token = await getToken({ template: "supabase" });
-      if (!token) return;
-      const supabase = getSupabaseClient(token);
+      const supabase = await getSupabase(getToken);
 
       // Query the single active goal from Supabase
       const { data, error } = await supabase
@@ -89,8 +92,10 @@ export default function Home() {
   }, [dbUser, getToken]);
 
   useEffect(() => {
-    fetchActiveGoal();
-  }, [fetchActiveGoal]);
+    if (dbUser) {
+      fetchActiveGoal();
+    }
+  }, [dbUser?.id]);
 
   const handleRefresh = async () => {
     setRefreshing(true);
@@ -116,6 +121,16 @@ export default function Home() {
     if (hr < 18) return "Good afternoon";
     return "Good evening";
   };
+
+  // Check-in window calculation (2 hours before to 1 hour after checkin_time)
+  const checkinTime = dbUser?.checkin_time || "21:00:00";
+  const [cHours, cMinutes] = checkinTime.split(":").map(Number);
+  const now = new Date();
+  const checkinDate = new Date();
+  checkinDate.setHours(cHours, cMinutes, 0, 0);
+  const diffMs = checkinDate.getTime() - now.getTime();
+  const diffHours = diffMs / (1000 * 60 * 60);
+  const showCheckinButton = diffHours <= 2 && diffHours >= -1;
 
   const displayGreeting = dbUser?.display_name
     ? `${getGreeting()}, ${dbUser.display_name.split(" ")[0]}!`
@@ -146,6 +161,32 @@ export default function Home() {
           <StreakRing streak={dbUser?.streak_current || 0} size={76} />
         </View>
 
+        {/* Notification Permission Banner */}
+        {!dbUser?.expo_push_token && (
+          <TouchableOpacity
+            activeOpacity={0.85}
+            style={styles.notifBanner}
+            onPress={async () => {
+              Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
+              const result = await requestPermission(dbUser?.clerk_id);
+              if (result === "granted") {
+                refetchUser();
+              }
+            }}
+          >
+            <View style={styles.notifIconContainer}>
+              <Bell size={20} color={colors.accent.light} />
+            </View>
+            <View style={styles.notifTextContainer}>
+              <Text style={styles.notifTitle}>Enable Reminders</Text>
+              <Text style={styles.notifSubtitle}>
+                Get notified before your daily check-in window closes
+              </Text>
+            </View>
+            <ChevronRight size={18} color={colors.text.tertiary} style={styles.notifArrow} />
+          </TouchableOpacity>
+        )}
+
         {activeGoal ? (
           <View style={styles.activeGoalSection}>
             {/* Goal Card Component */}
@@ -166,9 +207,25 @@ export default function Home() {
             {/* Accountability status note */}
             <View style={styles.contractAlert}>
               <Text style={styles.contractAlertText}>
-                🔒 **Staking active.** Check in before **{dbUser?.checkin_time?.substring(0, 5) || "21:00"}** to release your **${activeGoal.stake_amount.toFixed(2)}** hold!
+                🔒 **Staking active.** Check in before **{dbUser?.checkin_time?.substring(0, 5) || "21:00"}** to release your **₹{activeGoal.stake_amount}** hold!
               </Text>
             </View>
+
+            {/* Check-in Trigger CTA Button */}
+            {showCheckinButton && (
+              <Button
+                label="Check In Now 🎯"
+                onPress={() => {
+                  Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
+                  router.push({
+                    pathname: "/checkin",
+                    params: { goalId: activeGoal.id },
+                  });
+                }}
+                variant="primary"
+                fullWidth={true}
+              />
+            )}
           </View>
         ) : (
           <View style={styles.emptyStateSection}>
@@ -197,16 +254,18 @@ const styles = StyleSheet.create({
   container: {
     flex: 1,
     backgroundColor: colors.bg.base,
+    paddingTop: Platform.OS === "ios" ? 12 : (StatusBar.currentHeight || 0) + 12,
   },
   loadingContainer: {
     flex: 1,
     backgroundColor: colors.bg.base,
     justifyContent: "center",
     alignItems: "center",
+    paddingTop: Platform.OS === "ios" ? 12 : (StatusBar.currentHeight || 0) + 12,
   },
   scrollContent: {
     padding: 24,
-    paddingBottom: 40,
+    paddingBottom: 120, // Increased bottom padding so you can scroll and find each section clearly!
   },
   header: {
     flexDirection: "row",
@@ -291,5 +350,41 @@ const styles = StyleSheet.create({
     textAlign: "center",
     lineHeight: 20,
     marginBottom: 24,
+  },
+  notifBanner: {
+    flexDirection: "row",
+    alignItems: "center",
+    backgroundColor: colors.bg.card,
+    borderWidth: 1,
+    borderColor: colors.border.default,
+    borderRadius: 16,
+    padding: 16,
+    marginBottom: 20,
+  },
+  notifIconContainer: {
+    width: 40,
+    height: 40,
+    borderRadius: 20,
+    backgroundColor: colors.accent.surface,
+    alignItems: "center",
+    justifyContent: "center",
+    marginRight: 12,
+  },
+  notifTextContainer: {
+    flex: 1,
+  },
+  notifTitle: {
+    fontSize: 14,
+    fontWeight: "600",
+    color: colors.text.primary,
+    marginBottom: 2,
+  },
+  notifSubtitle: {
+    fontSize: 12,
+    color: colors.text.secondary,
+    lineHeight: 16,
+  },
+  notifArrow: {
+    marginLeft: 8,
   },
 });

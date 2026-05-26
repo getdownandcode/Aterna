@@ -8,13 +8,18 @@ import {
   TouchableOpacity,
   TextInput,
   Alert,
+  Platform,
+  StatusBar,
 } from "react-native";
+import { ChevronLeft } from "lucide-react-native";
 import { useRouter } from "expo-router";
 import * as Haptics from "expo-haptics";
+import { useAuth } from "@clerk/clerk-expo";
 import { colors } from "@/constants/theme";
 import { Button } from "@/components/ui/Button";
 import { goalStore } from "@/lib/goalStore";
 import { useUser } from "@/hooks/useUser";
+import { createOrder, openCheckoutSheet, verifyAndSaveGoal } from "@/lib/payments";
 
 const CHARITIES = [
   { name: "UNICEF", desc: "Saves and protects vulnerable children worldwide." },
@@ -25,11 +30,12 @@ const CHARITIES = [
 export default function Stake() {
   const router = useRouter();
   const { dbUser } = useUser();
+  const { getToken } = useAuth();
 
   const isPro = dbUser?.subscription_tier === "pro" || dbUser?.subscription_tier === "team";
   const maxStake = isPro ? 50 : 5;
 
-  const [stake, setStake] = useState<number>(3); // Default to $3
+  const [stake, setStake] = useState<number>(3); // Default to ₹3
   const [consequenceType, setConsequenceType] = useState<"charity" | "friend_pool" | "self_reward">("charity");
   const [selectedCharity, setSelectedCharity] = useState(CHARITIES[0].name);
   const [friendEmail, setFriendEmail] = useState("");
@@ -50,14 +56,81 @@ export default function Stake() {
 
     setCheckoutLoading(true);
 
-    // Simulate Razorpay Payment Setup (Dry-run / test card hold)
-    setTimeout(() => {
-      setCheckoutLoading(false);
+    try {
+      const tempGoalId = `temp_goal_${Math.random().toString(36).substring(7)}`;
 
+      // Step 1: Create Authorized Order on Edge Function
+      const orderRes = await createOrder(stake, tempGoalId, getToken);
+      if (!orderRes.success || !orderRes.orderId || !orderRes.amountPaise || !orderRes.keyId) {
+        Alert.alert("Payment Error", orderRes.error || "Could not initialize secure hold transaction.");
+        setCheckoutLoading(false);
+        return;
+      }
+
+      // Step 2: Open Razorpay native checkout sheet
+      const userDetails = {
+        email: dbUser?.email || "user@aterna.app",
+        displayName: dbUser?.display_name || "Aterna Member",
+      };
+
+      const originalGoalText = goalStore.get().rawText || "My Daily accountability contract";
+
+      const checkoutRes = await openCheckoutSheet(
+        {
+          orderId: orderRes.orderId,
+          amountPaise: orderRes.amountPaise,
+          keyId: orderRes.keyId,
+        },
+        userDetails,
+        originalGoalText
+      );
+
+      if (!checkoutRes.success) {
+        if (checkoutRes.error === "PAYMENT_CANCELLED") {
+          Alert.alert("Payment Cancelled", "Payment authorization was cancelled. Your goal has not been saved.");
+        } else {
+          Alert.alert("Payment Failed", checkoutRes.error || "Checkout sheet encountered a loading error.");
+        }
+        setCheckoutLoading(false);
+        return;
+      }
+
+      // Step 3: Verify Signature & Save Goal securely
       let target = "";
       if (consequenceType === "charity") target = selectedCharity;
       else if (consequenceType === "friend_pool") target = friendEmail;
       else target = selfRewardDetail;
+
+      const localDate = new Date().toISOString().split("T")[0];
+
+      const goalData = {
+        rawText: goalStore.get().rawText,
+        smartText: goalStore.get().smartText || goalStore.get().rawText,
+        category: goalStore.get().category,
+        stakeAmount: stake,
+        consequenceType: consequenceType,
+        consequenceTarget: target,
+        goalDate: localDate,
+      };
+
+      const verifyRes = await verifyAndSaveGoal(
+        {
+          paymentId: checkoutRes.paymentId!,
+          orderId: checkoutRes.orderId!,
+          signature: checkoutRes.signature!,
+        },
+        goalData,
+        getToken
+      );
+
+      if (!verifyRes.success || !verifyRes.goalId) {
+        Alert.alert(
+          "Verification Error",
+          verifyRes.error || "Cryptographic verification failed. Your card has not been billed. Please contact support."
+        );
+        setCheckoutLoading(false);
+        return;
+      }
 
       // Cache state in global goalStore
       goalStore.set({
@@ -67,12 +140,36 @@ export default function Stake() {
       });
 
       Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
-      router.push("/goal/confirm");
-    }, 1500);
+      setCheckoutLoading(false);
+
+      // Navigate directly to confirm with the successfully verified goalId
+      router.push({
+        pathname: "/goal/confirm",
+        params: { goalId: verifyRes.goalId },
+      });
+    } catch (err) {
+      console.error("[Stake] Payments sheet integration crashed:", err);
+      Alert.alert("Checkout Error", "An unexpected error occurred during payment processing.");
+      setCheckoutLoading(false);
+    }
   };
 
   return (
     <SafeAreaView style={styles.container}>
+      {/* Navigation Header */}
+      <View style={styles.topHeaderBar}>
+        <TouchableOpacity
+          activeOpacity={0.7}
+          style={styles.topBackButton}
+          onPress={() => {
+            Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+            router.back();
+          }}
+        >
+          <ChevronLeft color={colors.text.secondary} size={20} />
+        </TouchableOpacity>
+      </View>
+
       <View style={styles.header}>
         <Text style={styles.step}>Step 3 of 4</Text>
         <Text style={styles.title}>Commit your stake</Text>
@@ -85,7 +182,7 @@ export default function Stake() {
         {/* Stake Slider Card */}
         <View style={styles.sliderCard}>
           <Text style={styles.cardLabel}>DECLARE YOUR STAKE</Text>
-          <Text style={styles.stakeAmount}>${stake.toFixed(2)}</Text>
+          <Text style={styles.stakeAmount}>₹{stake.toLocaleString("en-IN")}</Text>
 
           {/* Simple Dynamic Custom Slider Row */}
           <View style={styles.sliderWrapper}>
@@ -114,7 +211,7 @@ export default function Stake() {
                       disabled && styles.stakePillTextDisabled,
                     ]}
                   >
-                    ${val}
+                    ₹{val}
                   </Text>
                 </TouchableOpacity>
               );
@@ -124,7 +221,7 @@ export default function Stake() {
           {!isPro && (
             <View style={styles.proBanner}>
               <Text style={styles.proText}>
-                💡 **Free tier** is capped at **$5.00** max. Upgrade to **Aterna Pro** in Settings to stake up to **$50.00**!
+                💡 **Free tier** is capped at **₹5.00** max. Upgrade to **Aterna Pro** in Settings to stake up to **₹50.00**!
               </Text>
             </View>
           )}
@@ -229,7 +326,7 @@ export default function Stake() {
 
       <View style={styles.footer}>
         <Button
-          label={checkoutLoading ? "Initializing Razorpay..." : `Lock In $${stake.toFixed(2)} Stake`}
+          label={checkoutLoading ? "Processing payment hold..." : `Lock In ₹${stake.toFixed(0)} Stake`}
           onPress={handleNext}
           disabled={checkoutLoading}
         />
@@ -245,6 +342,22 @@ const styles = StyleSheet.create({
   container: {
     flex: 1,
     backgroundColor: colors.bg.base,
+    paddingTop: Platform.OS === "ios" ? 12 : (StatusBar.currentHeight || 0) + 12,
+  },
+  topHeaderBar: {
+    flexDirection: "row",
+    justifyContent: "flex-start",
+    alignItems: "center",
+    paddingHorizontal: 24,
+    paddingTop: 8,
+    paddingBottom: 0,
+  },
+  topBackButton: {
+    padding: 8,
+    borderRadius: 20,
+    backgroundColor: colors.bg.card,
+    borderWidth: 1,
+    borderColor: colors.border.default,
   },
   header: {
     padding: 24,

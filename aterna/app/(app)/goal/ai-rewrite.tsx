@@ -7,7 +7,10 @@ import {
   ActivityIndicator,
   ScrollView,
   TouchableOpacity,
+  Platform,
+  StatusBar,
 } from "react-native";
+import { ChevronLeft } from "lucide-react-native";
 import { useRouter } from "expo-router";
 import * as Haptics from "expo-haptics";
 import { colors } from "@/constants/theme";
@@ -104,6 +107,17 @@ export default function AiRewrite() {
 
   return (
     <SafeAreaView style={styles.container}>
+      {/* Premium Navigation Header Row */}
+      <View style={styles.topHeaderBar}>
+        <TouchableOpacity
+          activeOpacity={0.7}
+          style={styles.topBackButton}
+          onPress={handleGoBack}
+        >
+          <ChevronLeft color={colors.text.secondary} size={20} />
+        </TouchableOpacity>
+      </View>
+
       <View style={styles.header}>
         <Text style={styles.step}>Step 2 of 4</Text>
         <Text style={styles.title}>Your accountability coach</Text>
@@ -166,6 +180,22 @@ const styles = StyleSheet.create({
   container: {
     flex: 1,
     backgroundColor: colors.bg.base,
+    paddingTop: Platform.OS === "ios" ? 12 : (StatusBar.currentHeight || 0) + 12,
+  },
+  topHeaderBar: {
+    flexDirection: "row",
+    justifyContent: "flex-start",
+    alignItems: "center",
+    paddingHorizontal: 24,
+    paddingTop: 8,
+    paddingBottom: 0,
+  },
+  topBackButton: {
+    padding: 8,
+    borderRadius: 20,
+    backgroundColor: colors.bg.card,
+    borderWidth: 1,
+    borderColor: colors.border.default,
   },
   header: {
     padding: 24,

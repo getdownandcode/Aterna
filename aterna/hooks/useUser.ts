@@ -1,6 +1,7 @@
-import { useState, useEffect, useCallback } from "react";
+import { useState, useEffect, useCallback, useRef } from "react";
 import { useAuth, useUser as useClerkUser } from "@clerk/clerk-expo";
-import { getSupabaseClient } from "@/lib/supabase";
+import { getSupabase } from "@/lib/supabase";
+import { getYesterdayDateString } from "@/lib/streak";
 import type { User as DbUser } from "@/types/database";
 
 interface UseUserResult {
@@ -16,6 +17,7 @@ export function useUser(): UseUserResult {
   const [dbUser, setDbUser] = useState<DbUser | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  const hasCheckedYesterday = useRef(false);
 
   const fetchOrSyncUser = useCallback(async () => {
     if (!isAuthLoaded || !isClerkUserLoaded) return;
@@ -26,17 +28,13 @@ export function useUser(): UseUserResult {
     }
 
     try {
-      setLoading(true);
+      if (!dbUser) {
+        setLoading(true);
+      }
       setError(null);
 
-      // 1. Get dynamic Supabase-compatible Clerk JWT token
-      const token = await getToken({ template: "supabase" });
-      if (!token) {
-        throw new Error("Failed to retrieve Clerk-Supabase JWT token.");
-      }
-
-      // 2. Instantiate authenticated client
-      const supabase = getSupabaseClient(token);
+      // 1. Get dynamic Supabase client (with template fallback)
+      const supabase = await getSupabase(getToken);
 
       // 3. Query existing user by clerk_id
       const { data: existingUser, error: fetchError } = await supabase
@@ -46,7 +44,13 @@ export function useUser(): UseUserResult {
         .maybeSingle();
 
       if (fetchError) {
-        throw new Error(`Failed to query database user: ${fetchError.message}`);
+        console.error("[useUser] Fetch error details:", {
+          message: fetchError.message,
+          details: fetchError.details,
+          hint: fetchError.hint,
+          code: fetchError.code,
+        });
+        throw new Error(`Failed to query database user: ${fetchError.message} (Code: ${fetchError.code})`);
       }
 
       if (existingUser) {
@@ -68,6 +72,44 @@ export function useUser(): UseUserResult {
           }
         }
         setDbUser(existingUser);
+
+        // ==========================================
+        // LAZY STREAK RESET Timing (Day 3 check)
+        // ==========================================
+        if (!hasCheckedYesterday.current) {
+          hasCheckedYesterday.current = true;
+          const yesterdayStr = getYesterdayDateString();
+
+          const { data: yesterdayGoal } = await supabase
+            .from("goals")
+            .select("*")
+            .eq("user_id", existingUser.id)
+            .eq("goal_date", yesterdayStr)
+            .maybeSingle();
+
+          if (yesterdayGoal && yesterdayGoal.status === "active") {
+            console.log("[useUser] Lazy reset: Yesterday's goal remained active. Marking skipped & resetting streak.");
+            
+            await supabase
+              .from("goals")
+              .update({ status: "skipped" })
+              .eq("id", yesterdayGoal.id);
+
+            const { data: resetUser } = await supabase
+              .from("users")
+              .update({
+                streak_current: 0,
+                updated_at: new Date().toISOString(),
+              })
+              .eq("id", existingUser.id)
+              .select()
+              .single();
+
+            if (resetUser) {
+              setDbUser(resetUser);
+            }
+          }
+        }
       } else {
         // User does not exist, insert/sync new record
         const email = clerkUser.emailAddresses[0]?.emailAddress || "";
@@ -90,7 +132,13 @@ export function useUser(): UseUserResult {
           .single();
 
         if (insertError) {
-          throw new Error(`Failed to insert/sync user to database: ${insertError.message}`);
+          console.error("[useUser] Insert error details:", {
+            message: insertError.message,
+            details: insertError.details,
+            hint: insertError.hint,
+            code: insertError.code,
+          });
+          throw new Error(`Failed to insert/sync user to database: ${insertError.message} (Code: ${insertError.code})`);
         }
 
         setDbUser(newUser);
@@ -105,8 +153,10 @@ export function useUser(): UseUserResult {
   }, [isAuthLoaded, isClerkUserLoaded, isSignedIn, clerkUser, getToken]);
 
   useEffect(() => {
-    fetchOrSyncUser();
-  }, [fetchOrSyncUser]);
+    if (isAuthLoaded && isClerkUserLoaded) {
+      fetchOrSyncUser();
+    }
+  }, [isAuthLoaded, isClerkUserLoaded, isSignedIn, clerkUser?.id]);
 
   return {
     dbUser,
